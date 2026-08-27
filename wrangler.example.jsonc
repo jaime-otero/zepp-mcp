@@ -1,0 +1,12 @@
+{
+  "name": "zepp-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "",
+  "compatibility_flags": ["nodejs_compat"],
+  "kv_namespaces": [
+    {
+      "binding": "ZEPP_KV",
+      "id": ""
+    }
+  ]
+}
