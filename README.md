@@ -68,6 +68,39 @@ npx wrangler secret put ZEPP_EMAIL
 npx wrangler secret put ZEPP_PASSWORD
 ```
 
+After deploying, Wrangler prints the Worker's public URL (e.g. `https://zepp-mcp.<your-subdomain>.workers.dev`). The MCP endpoint is that URL plus `/mcp`, e.g. `https://zepp-mcp.<your-subdomain>.workers.dev/mcp`. Note that the endpoint has no built-in authentication — anyone with the URL can call it — so treat it as a secret if that matters to you, or add your own auth in front of it.
+
+## Using the deployed MCP server
+
+Point any MCP client that supports the Streamable HTTP transport at `https://<your-worker-url>/mcp`.
+
+**Claude Code**
+
+```bash
+claude mcp add --transport http zepp https://zepp-mcp.<your-subdomain>.workers.dev/mcp
+```
+
+**Claude Desktop**
+
+Claude Desktop connects to remote HTTP servers via a local stdio proxy (`mcp-remote`). Add this to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "zepp": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://zepp-mcp.<your-subdomain>.workers.dev/mcp"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop after editing the config. The `zepp_*` tools should then show up in the tool picker.
+
+**Other MCP clients**
+
+Any client with native Streamable HTTP support (e.g. Cursor, Windsurf) can be pointed directly at the `/mcp` URL — check that client's docs for its config format. Clients that only support stdio servers can use the `mcp-remote` proxy pattern shown above.
+
 ## Tools
 
 | Tool | Description |
