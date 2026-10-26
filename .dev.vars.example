@@ -1,2 +1,4 @@
 ZEPP_EMAIL=your-zepp-email@example.com
 ZEPP_PASSWORD=your-zepp-password
+# Optional: require this token on /mcp
+# MCP_AUTH_TOKEN=change-me

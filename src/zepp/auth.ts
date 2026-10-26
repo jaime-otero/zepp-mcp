@@ -109,7 +109,24 @@ export async function login(accessToken: string): Promise<ZeppLoginResult> {
     throw new Error("Missing app_token, login_token, or user_id in login response")
   }
 
-  return { appToken, loginToken, userId }
+  return { appToken, loginToken, userId, regionHosts: extractRegionHosts(data) }
+}
+
+// The login response lists the account's regional hosts under `domains[].cnames`.
+function extractRegionHosts(data: Record<string, unknown>): string[] {
+  const hosts: string[] = []
+  const domains = Array.isArray(data.domains) ? data.domains : []
+  for (const d of domains as Record<string, unknown>[]) {
+    const cnames = Array.isArray(d?.cnames) ? (d.cnames as unknown[]) : []
+    for (const c of cnames) {
+      if (typeof c !== "string" || !c.includes("api-mifit")) continue
+      let host = c.startsWith("http") ? c : `https://${c}`
+      // us2 is deprecated and times out; us3 serves the same accounts.
+      host = host.replace("api-mifit-us2.zepp.com", "api-mifit-us3.zepp.com")
+      if (!hosts.includes(host)) hosts.push(host)
+    }
+  }
+  return hosts
 }
 
 export async function fullLogin(

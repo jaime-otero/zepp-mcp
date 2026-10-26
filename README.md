@@ -68,7 +68,7 @@ npx wrangler secret put ZEPP_EMAIL
 npx wrangler secret put ZEPP_PASSWORD
 ```
 
-After deploying, Wrangler prints the Worker's public URL (e.g. `https://zepp-mcp.<your-subdomain>.workers.dev`). The MCP endpoint is that URL plus `/mcp`, e.g. `https://zepp-mcp.<your-subdomain>.workers.dev/mcp`. Note that the endpoint has no built-in authentication — anyone with the URL can call it — so treat it as a secret if that matters to you, or add your own auth in front of it.
+After deploying, Wrangler prints the Worker's public URL (e.g. `https://zepp-mcp.<your-subdomain>.workers.dev`). The MCP endpoint is that URL plus `/mcp`, e.g. `https://zepp-mcp.<your-subdomain>.workers.dev/mcp`. By default the endpoint has no authentication — anyone with the URL can call it — so treat it as a secret, or set `MCP_AUTH_TOKEN` (see [Configuration](#configuration)).
 
 ## Using the deployed MCP server
 
@@ -105,17 +105,39 @@ Any client with native Streamable HTTP support (e.g. Cursor, Windsurf) can be po
 
 | Tool | Description |
 | --- | --- |
-| `zepp_status` | Check Zepp cloud login status and user ID |
-| `get_devices` | List paired Zepp/Amazfit devices on the account |
-| `get_daily_summary` | Per-day steps, distance, calories, and sleep summary over a date range |
+| `zepp_status` | Check Zepp cloud login status, user ID and the timezone used for dates |
+| `get_devices` | List paired Zepp/Amazfit devices on the account (the Bluetooth auth key is stripped) |
+| `get_daily_summary` | Per-day steps, distance, calories, step goal and a compact sleep summary (`include_raw` adds Zepp's decoded payload) |
+| `get_sleep_detail` | Per-night bedtime, wake time, total/deep/light/REM/awake minutes, sleep score, resting HR, stage timeline and naps |
+| `get_heart_rate_history` | All-day heart rate: per-day resting/avg/min/max bpm, optionally `hourly` or per-`minute` (max 3 days) |
+| `get_hrv` | Nightly HRV (rMSSD by default, or SDNN): avg/min/max/last of the night's samples plus a range summary |
+| `get_readiness` | Daily readiness score, skin temperature delta from baseline and breathing quality score |
+| `get_stress` | Daily all-day stress (avg/min/max), optionally with the intraday series |
+| `get_lactate_threshold` | Lactate threshold estimates Zepp computes after qualifying runs |
+| `get_health_events` | Raw event streams by preset (`body_battery`, `respiratory_rate`, `spo2`, `pai`, `blood_pressure`, ...) or any `event_type`/`sub_type` |
 | `list_workouts` | List recent workout/sport sessions (runs, walks, cycling, etc) |
 | `get_workout_detail` | Full detail for one workout (GPS track, pace, heart rate series, etc), by `trackid` from `list_workouts` |
 | `get_profile` | User profile data (weight, height, birthday, gender, etc) |
-| `get_heart_rate_history` | Heart rate readings over a date range |
-| `get_sleep_detail` | Sleep stage breakdown per night over a date range |
-| `get_lactate_threshold` | Lactate threshold data, when available |
 
-Date-range tools accept optional `from_date` / `to_date` in `YYYY-MM-DD` format and default to the last 30 days.
+Date-range tools accept optional `from_date` / `to_date` in `YYYY-MM-DD` format, interpreted in `ZEPP_TIMEZONE`. Each tool's description states its default range.
+
+HRV, readiness, stress and the other event-based metrics only exist if the watch records them (recent Zepp OS watches do); otherwise the tools return an empty list.
+
+## Configuration
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `ZEPP_EMAIL`, `ZEPP_PASSWORD` | yes | Zepp account credentials (secrets) |
+| `ZEPP_TIMEZONE` | no | IANA timezone for dates, e.g. `Europe/Madrid` (the default) |
+| `MCP_AUTH_TOKEN` | no | When set, `/mcp` requires `Authorization: Bearer <token>` or a `?key=<token>` query parameter |
+
+Set `ZEPP_TIMEZONE` under `vars` in `wrangler.jsonc`, and `MCP_AUTH_TOKEN` as a secret:
+
+```bash
+npx wrangler secret put MCP_AUTH_TOKEN
+```
+
+With a token set, clients that cannot send headers (such as a claude.ai custom connector) can use `https://<your-worker-url>/mcp?key=<token>`.
 
 ## Project structure
 
@@ -125,15 +147,18 @@ src/
   tools/index.ts     MCP tool registrations
   zepp/
     auth.ts          Zepp login flow (token exchange + login)
-    client.ts        ZeppClient: session caching + data API calls
-    constants.ts      Zepp API URLs, headers, payload templates
+    client.ts        ZeppClient: session caching + data and event API calls
+    parse.ts         Decoding of band data (sleep, per-minute HR) and events
+    constants.ts      Zepp API URLs, headers, payload templates, event presets
     types.ts          Shared Zepp types
   lib/
     crypto.ts        AES-CBC helper used to encrypt the login token request
     kv-cache.ts       Session caching in Cloudflare KV
+    time.ts          Timezone-aware date helpers
 ```
 
 ## Notes
 
 - Session tokens are cached in KV for 24 hours and refreshed automatically on a 401/403 response.
+- Event streams (HRV, readiness, stress, ...) are read from the account's regional host taken from the login response, falling back to `api-mifit.zepp.com`. Sessions cached before this was added trigger one fresh login to pick it up.
 - `wrangler.jsonc` and `.dev.vars` are gitignored since they hold your KV namespace ID and account credentials — use the checked-in `.example` files as templates.

@@ -1,3 +1,5 @@
+import type { ZeppEventQuery } from "./types"
+
 const encoder = new TextEncoder()
 
 export const ZEPP_ENCRYPTION_KEY = encoder.encode("xeNtBVqzDc6tuNTh")
@@ -71,7 +73,6 @@ export const HEADERS_DATA: Record<string, string> = {
   country: "US",
   appplatform: "android_phone",
   "hm-privacy-ceip": "true",
-  timezone: "Europe/London",
   channel: ZEPP_CHANNEL,
   vb: "202509151347",
   cv: "151689_9.12.5",
@@ -82,3 +83,24 @@ export const HEADERS_DATA: Record<string, string> = {
   "user-agent": "Zepp/9.12.5 (Pixel 4; Android 12; Density/2.75)",
   "accept-encoding": "gzip",
 }
+
+export const DEFAULT_TIMEZONE = "Europe/Madrid"
+
+// Known (eventType, subType) pairs of Zepp's event streams.
+export const EVENT_PRESETS = {
+  hrv_rmssd: { eventType: "HRVRMSSD", subType: "real_data", scope: "v2" },
+  hrv_sdnn: { eventType: "hrv_sdnn", subType: "real_data", scope: "v2" },
+  readiness: { eventType: "readiness", subType: "watch_score", scope: "v2" },
+  body_battery: { eventType: "Charge", subType: "real_data", scope: "v2" },
+  stress_samples: { eventType: "Charge", subType: "stress_data", scope: "v2" },
+  stress_daily: { eventType: "all_day_stress", scope: "user" },
+  respiratory_rate: { eventType: "RespiratoryRate", subType: "real_data", scope: "v2" },
+  spo2: { eventType: "blood_oxygen", scope: "user" },
+  pai: { eventType: "PaiHealthInfo", scope: "user" },
+  daily_health: { eventType: "DailyHealth", subType: "summary", scope: "v2" },
+  blood_pressure: { eventType: "blood_pressure", subType: "real_data", scope: "v2" },
+  emotion: { eventType: "Emotion", subType: "real_data", scope: "v2" },
+  lactate_threshold: { eventType: "LactateThreshold", subType: "summary", scope: "v2" },
+} as const satisfies Record<string, ZeppEventQuery>
+
+export type EventPreset = keyof typeof EVENT_PRESETS

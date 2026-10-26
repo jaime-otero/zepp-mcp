@@ -8,5 +8,8 @@
       "binding": "ZEPP_KV",
       "id": ""
     }
-  ]
+  ],
+  "vars": {
+    "ZEPP_TIMEZONE": "Europe/Madrid"
+  }
 }
