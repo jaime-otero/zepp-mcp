@@ -1,0 +1,15 @@
+{
+  "name": "zepp-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "kv_namespaces": [
+    {
+      "binding": "ZEPP_KV",
+      "id": "955a53e4689f45678725cc661298d03e"
+    }
+  ],
+  "vars": {
+    "ZEPP_TIMEZONE": "Europe/Madrid"
+  }
+}

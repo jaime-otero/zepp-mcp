@@ -161,4 +161,4 @@ src/
 
 - Session tokens are cached in KV for 24 hours and refreshed automatically on a 401/403 response.
 - Event streams (HRV, readiness, stress, ...) are read from the account's regional host taken from the login response, falling back to `api-mifit.zepp.com`. Sessions cached before this was added trigger one fresh login to pick it up.
-- `wrangler.jsonc` and `.dev.vars` are gitignored since they hold your KV namespace ID and account credentials — use the checked-in `.example` files as templates.
+- `wrangler.jsonc` is committed so Cloudflare Workers Builds can deploy on push; it only holds the KV namespace ID (not usable without your Cloudflare account). `.dev.vars` is gitignored since it holds your account credentials — use `.dev.vars.example` as a template. Credentials in production are Worker secrets.
