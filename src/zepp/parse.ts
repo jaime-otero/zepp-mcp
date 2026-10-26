@@ -116,6 +116,42 @@ export function stats(values: number[]): { avg: number; min: number; max: number
   return { avg: Math.round((sum / values.length) * 10) / 10, min, max, count: values.length }
 }
 
+export function median(values: number[]): number | undefined {
+  if (values.length === 0) return undefined
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+// Device bookkeeping on every event; the v2 stream even encodes it as "count,value".
+const DEVICE_META_KEYS = new Set([
+  "deviceType",
+  "deviceSN",
+  "deviceSn",
+  "deviceId",
+  "deviceSource",
+  "deviceMac",
+  "appName",
+  "timeZone",
+  "timezone",
+  "timezoneId",
+])
+
+// User-scope events send numbers and nested data as strings.
+function normalizeScalar(v: unknown): unknown {
+  if (typeof v !== "string") return v
+  const t = v.trim()
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t)
+  if (t.startsWith("[") || t.startsWith("{")) {
+    try {
+      return JSON.parse(t)
+    } catch {
+      return v
+    }
+  }
+  return v
+}
+
 // Merges an event's `value` payload (object or JSON string) into the event itself.
 export function flattenEvent(item: Record<string, unknown>, tz: string): ZeppEvent {
   const { value, ...rest } = item
@@ -127,11 +163,15 @@ export function flattenEvent(item: Record<string, unknown>, tz: string): ZeppEve
       parsed = value
     }
   }
-  const out: ZeppEvent = { ...rest }
+  const merged: Record<string, unknown> = { ...rest }
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-    Object.assign(out, parsed)
+    Object.assign(merged, parsed)
   } else if (parsed !== undefined) {
-    out.value = parsed
+    merged.value = parsed
+  }
+  const out: ZeppEvent = {}
+  for (const [k, v] of Object.entries(merged)) {
+    if (!DEVICE_META_KEYS.has(k)) out[k] = normalizeScalar(v)
   }
   const ts = num(item.timestamp)
   if (ts) out.local_time = localDateTime(ts, tz)

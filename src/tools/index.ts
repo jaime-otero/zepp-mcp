@@ -99,7 +99,7 @@ export function registerTools(server: McpServer, client: ZeppClient) {
     {
       title: "Get HRV",
       description:
-        "Heart rate variability per night (ms): average, min, max and last of the night's samples, plus a range summary. rMSSD by default (the value the Zepp app shows). Defaults to the last 30 days.",
+        "Heart rate variability (ms). nights[] has Zepp's nightly sleep HRV (the value the app shows), personal baseline and HRV score; measurements[] has stats of the raw samples per upload window. rMSSD by default. Defaults to the last 30 days.",
       inputSchema: z.object({
         ...dateRange(30),
         metric: z
@@ -123,7 +123,7 @@ export function registerTools(server: McpServer, client: ZeppClient) {
     {
       title: "Get Readiness",
       description:
-        "Daily readiness (morning recovery score 0-100), skin temperature delta from baseline (°C) and breathing quality score. Defaults to the last 14 days.",
+        "Daily readiness (morning recovery score 0-100) with its components: sleep HRV and baseline, sleeping resting HR and baseline, skin temperature delta (°C), breathing score, physical/mental scores. Defaults to the last 14 days.",
       inputSchema: z.object(dateRange(14)),
     },
     async ({ from_date, to_date }) => json(await client.getReadiness(from_date, to_date))
@@ -134,14 +134,14 @@ export function registerTools(server: McpServer, client: ZeppClient) {
     {
       title: "Get Stress",
       description:
-        "Daily all-day stress: average, min and max stress (0-100) plus Zepp's per-day breakdown fields. Defaults to the last 14 days.",
+        "Daily all-day stress (0-100): average, min, max and the % of time relaxed/normal/medium/high. Defaults to the last 14 days.",
       inputSchema: z.object({
         ...dateRange(14),
         include_samples: z
           .boolean()
           .optional()
           .default(false)
-          .describe("Include the intraday stress series"),
+          .describe("Include the 5-minute stress series"),
       }),
     },
     async ({ from_date, to_date, include_samples }) =>

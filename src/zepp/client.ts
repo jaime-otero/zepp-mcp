@@ -5,6 +5,7 @@ import {
   daysInRange,
   formatWithOffset,
   localDate,
+  localDateTime,
   rangeToMs,
   resolveRange,
   type DateRange,
@@ -14,6 +15,7 @@ import {
   decodeHeartRateBlob,
   decodeSummary,
   flattenEvent,
+  median,
   parseSleep,
   stats,
 } from "./parse"
@@ -327,6 +329,47 @@ export class ZeppClient {
     })
   }
 
+  private async readinessEvents(range: DateRange): Promise<ZeppEvent[]> {
+    const limit = Math.min(1000, daysInRange(range) * 3 + 10)
+    const { events } = await this.fetchEvents(EVENT_PRESETS.readiness, range, limit)
+    if (events.length > 0) return events
+    return (
+      await this.fetchEvents({ eventType: "readiness", subType: "watch_score", scope: "user" }, range, limit)
+    ).events
+  }
+
+  // Zepp marks missing readiness components with 255.
+  private readinessEntry(ev: ZeppEvent): Record<string, unknown> {
+    const v = (key: string, invalid: number[] = [255]) => {
+      const n = num(ev[key])
+      return n === undefined || invalid.includes(n) ? undefined : n
+    }
+    const skin = v("skinTempCalibrated")
+    const ahi = v("ahiScore")
+    const ahiBaseline = num(ev.ahiBaseline)
+    return {
+      date: this.eventDate(ev),
+      local_time: ev.local_time,
+      readiness_score: v("rdnsScore"),
+      physical_score: v("phyScore"),
+      physical_baseline: v("phyBaseline"),
+      mental_score: v("mentScore"),
+      mental_baseline: v("mentBaseLine"),
+      hrv: { sleep_ms: v("sleepHRV", [255, 0]), baseline_ms: v("hrvBaseline", [255, 0]), score: v("hrvScore") },
+      resting_hr: { sleep_bpm: v("sleepRHR", [255, 0]), baseline_bpm: v("rhrBaseline", [255, 0]), score: v("rhrScore") },
+      skin_temp: {
+        delta_c: skin === undefined ? undefined : skin / 100,
+        score: v("skinTempScore"),
+        baseline: v("skinTempBaseLine", [255, -10]),
+      },
+      breathing: {
+        score: ahi !== undefined && ahi >= 0 ? ahi : undefined,
+        ahi_baseline: ahiBaseline === undefined ? undefined : Math.round(ahiBaseline * 100) / 100,
+      },
+      afib_score: v("afibScore"),
+    }
+  }
+
   async getHrv(
     fromDate?: string,
     toDate?: string,
@@ -335,85 +378,70 @@ export class ZeppClient {
   ): Promise<Record<string, unknown>> {
     const range = this.range(fromDate, toDate, 30)
     const preset = metric === "sdnn" ? EVENT_PRESETS.hrv_sdnn : EVENT_PRESETS.hrv_rmssd
-    const { events, truncated } = await this.fetchEvents(preset, range, Math.min(1000, daysInRange(range) * 4 + 10))
+    const [stream, readiness] = await Promise.all([
+      this.fetchEvents(preset, range, Math.min(1000, daysInRange(range) * 2 + 10)),
+      // Zepp's nightly value (the one the app shows) is only published for rMSSD.
+      metric === "rmssd" ? this.readinessEvents(range) : Promise.resolve([] as ZeppEvent[]),
+    ])
 
-    const nights = events.map((ev) => {
-      const samples = Array.isArray(ev.samples) ? (ev.samples as unknown[]) : []
-      const values = samples
-        .map((sm) => {
-          if (typeof sm === "number") return sm
-          if (!sm || typeof sm !== "object") return undefined
-          const o = sm as Record<string, unknown>
-          return num(o.hrv) ?? num(o[metric]) ?? num(o.value)
-        })
-        .filter((v): v is number => v !== undefined && v > 0)
+    const nights = readiness
+      .map((ev) => {
+        const r = this.readinessEntry(ev)
+        const hrv = r.hrv as Record<string, number | undefined>
+        return { date: r.date, sleep_hrv_ms: hrv.sleep_ms, baseline_ms: hrv.baseline_ms, hrv_score: hrv.score }
+      })
+      .filter((n) => n.sleep_hrv_ms !== undefined)
+
+    // The raw stream comes in ~24 h buckets that do not line up with nights;
+    // each sample's time is the bucket's startTime plus its offset `u` (ms).
+    const measurements = stream.events.map((ev) => {
+      const start = num(ev.startTime) ?? num(ev.timestamp) ?? 0
+      const samples = (Array.isArray(ev.samples) ? ev.samples : []) as Record<string, unknown>[]
+      const points = samples
+        .map((sm) => ({ t: start + (num(sm?.u) ?? 0), v: num(sm?.hrv) ?? num(sm?.[metric]) ?? num(sm?.value) }))
+        .filter((p): p is { t: number; v: number } => p.v !== undefined && p.v > 0)
+      const values = points.map((p) => p.v)
       const s = stats(values)
-      const single = num(ev.hrv) ?? num(ev[metric])
-
-      const night: Record<string, unknown> = {
-        date: this.eventDate(ev),
-        local_time: ev.local_time,
-        avg_ms: s ? Math.round(s.avg) : single,
+      const m: Record<string, unknown> = {
+        window_start: points.length ? localDateTime(points[0].t, this.timezone) : undefined,
+        window_end: points.length ? localDateTime(points[points.length - 1].t, this.timezone) : undefined,
+        samples_count: values.length,
+        avg_ms: s ? Math.round(s.avg) : undefined,
+        median_ms: median(values),
         min_ms: s?.min,
         max_ms: s?.max,
-        last_ms: values.length ? values[values.length - 1] : undefined,
-        samples_count: values.length,
-        ...this.scalarFields(ev, ["hrv", metric]),
       }
-      if (includeSamples) night.samples = compact(samples, 500)
-      return night
+      if (includeSamples) m.samples = points.map((p) => [localDateTime(p.t, this.timezone), p.v])
+      return m
     })
 
-    const avgs = nights.map((n) => n.avg_ms).filter((v): v is number => typeof v === "number")
-    const overall = stats(avgs)
+    const values = nights.map((n) => n.sleep_hrv_ms as number)
+    const overall = stats(values)
     return {
       metric,
       unit: "ms",
       range,
       summary: overall
-        ? { nights: overall.count, avg_ms: Math.round(overall.avg), min_night_ms: overall.min, max_night_ms: overall.max }
+        ? {
+            nights: overall.count,
+            avg_sleep_hrv_ms: Math.round(overall.avg),
+            min_sleep_hrv_ms: overall.min,
+            max_sleep_hrv_ms: overall.max,
+            latest_baseline_ms: nights[nights.length - 1].baseline_ms,
+          }
         : null,
       nights,
-      truncated,
+      measurements,
+      truncated: stream.truncated,
       note:
-        nights.length === 0
-          ? "No HRV events in this range. The watch may not record HRV, or it has not synced yet."
-          : "avg_ms is the mean of the night's samples, which is the value the Zepp app shows.",
+        "nights[].sleep_hrv_ms is Zepp's nightly HRV (the value the app shows), dated by the morning it was computed. " +
+        "measurements[] are the raw samples in Zepp's ~24 h upload windows, which do not line up with nights.",
     }
   }
 
   async getReadiness(fromDate?: string, toDate?: string): Promise<Record<string, unknown>[]> {
-    const range = this.range(fromDate, toDate, 14)
-    const limit = Math.min(1000, daysInRange(range) * 3 + 10)
-    let { events } = await this.fetchEvents(EVENT_PRESETS.readiness, range, limit)
-    if (events.length === 0) {
-      ;({ events } = await this.fetchEvents(
-        { eventType: "readiness", subType: "watch_score", scope: "user" },
-        range,
-        limit
-      ))
-    }
-
-    const valid = (v: unknown, invalid: number[] = [255]) => {
-      const n = num(v)
-      return n === undefined || invalid.includes(n) ? undefined : n
-    }
-    const known = ["rdnsScore", "skinTempCalibrated", "skinTempScore", "skinTempBaseLine", "ahiScore"]
-
-    return events.map((ev) => {
-      const skin = valid(ev.skinTempCalibrated)
-      const ahi = num(ev.ahiScore)
-      return {
-        date: this.eventDate(ev),
-        local_time: ev.local_time,
-        readiness_score: num(ev.rdnsScore),
-        skin_temp_delta_c: skin === undefined ? undefined : skin / 100,
-        skin_temp_score: valid(ev.skinTempScore),
-        skin_temp_baseline: valid(ev.skinTempBaseLine, [255, -10]),
-        breathing_score: ahi !== undefined && ahi >= 0 ? ahi : undefined,
-        other: this.scalarFields(ev, known),
-      }
-    })
+    const events = await this.readinessEvents(this.range(fromDate, toDate, 14))
+    return events.map((ev) => this.readinessEntry(ev))
   }
 
   async getStress(
@@ -428,18 +456,23 @@ export class ZeppClient {
       Math.min(1000, daysInRange(range) * 2 + 10)
     )
     return events.map((ev) => {
+      const series = (Array.isArray(ev.data) ? ev.data : []) as Record<string, unknown>[]
+      const points = series
+        .map((p) => ({ t: num(p?.time), v: num(p?.value) }))
+        .filter((p): p is { t: number; v: number } => p.t !== undefined && p.v !== undefined && p.v >= 0 && p.v <= 100)
+      const s = stats(points.map((p) => p.v))
       const entry: Record<string, unknown> = {
         date: this.eventDate(ev),
-        avg_stress: num(ev.avgStress),
-        min_stress: num(ev.minStress),
-        max_stress: num(ev.maxStress),
-        ...this.scalarFields(ev, ["avgStress", "minStress", "maxStress"]),
+        avg_stress: s ? Math.round(s.avg) : num(ev.avgStress),
+        min_stress: s?.min ?? num(ev.minStress),
+        max_stress: s?.max ?? num(ev.maxStress),
+        readings: points.length,
+        relaxed_pct: num(ev.relaxProportion),
+        normal_pct: num(ev.normalProportion),
+        medium_pct: num(ev.mediumProportion),
+        high_pct: num(ev.highProportion),
       }
-      if (includeSamples) {
-        for (const [k, v] of Object.entries(ev)) {
-          if (v !== null && typeof v === "object") entry[k] = compact(v, 300)
-        }
-      }
+      if (includeSamples) entry.series = points.map((p) => [localDateTime(p.t, this.timezone), p.v])
       return entry
     })
   }

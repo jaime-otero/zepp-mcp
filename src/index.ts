@@ -13,7 +13,7 @@ interface Env {
   ZEPP_PASSWORD: string
   // IANA timezone used to interpret dates (default Europe/Madrid).
   ZEPP_TIMEZONE?: string
-  // When set, /mcp requires `Authorization: Bearer <token>` or `?key=<token>`.
+  // When set, /mcp requires the token (Bearer header, `?key=` or /mcp/<token>).
   MCP_AUTH_TOKEN?: string
 }
 
@@ -40,7 +40,9 @@ function tokensMatch(given: string, expected: string): boolean {
   return crypto.subtle.timingSafeEqual(a, b)
 }
 
-function isAuthorized(req: Request, expected: string | undefined): boolean {
+// The token may come as a Bearer header, a `?key=` parameter or the path (/mcp/<token>).
+function isAuthorized(req: Request, expected: string | undefined, pathKey?: string): boolean {
+  if (pathKey !== undefined) return !!expected && tokensMatch(pathKey, expected)
   if (!expected) return true
   const header = req.headers.get("authorization") ?? ""
   const bearer = header.startsWith("Bearer ") ? header.slice(7) : ""
@@ -50,17 +52,20 @@ function isAuthorized(req: Request, expected: string | undefined): boolean {
 
 const app = new Hono<{ Bindings: Env }>()
 
-app.all("/mcp", async (c) => {
-  if (!isAuthorized(c.req.raw, c.env.MCP_AUTH_TOKEN)) {
-    return c.json({ error: "unauthorized" }, 401)
+async function handleMcp(req: Request, env: Env, pathKey?: string): Promise<Response> {
+  if (!isAuthorized(req, env.MCP_AUTH_TOKEN, pathKey)) {
+    return Response.json({ error: "unauthorized" }, { status: 401 })
   }
-  const server = createServer(c.env)
+  const server = createServer(env)
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   })
   await server.connect(transport)
-  return transport.handleRequest(c.req.raw)
-})
+  return transport.handleRequest(req)
+}
+
+app.all("/mcp", (c) => handleMcp(c.req.raw, c.env))
+app.all("/mcp/:key", (c) => handleMcp(c.req.raw, c.env, c.req.param("key")))
 
 app.get("/", (c) => {
   return c.json({ name: "zepp-mcp", status: "running" })
