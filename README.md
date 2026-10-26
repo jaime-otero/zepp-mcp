@@ -110,9 +110,9 @@ Any client with native Streamable HTTP support (e.g. Cursor, Windsurf) can be po
 | `get_daily_summary` | Per-day steps, distance, calories, step goal and a compact sleep summary (`include_raw` adds Zepp's decoded payload) |
 | `get_sleep_detail` | Per-night bedtime, wake time, total/deep/light/REM/awake minutes, sleep score, resting HR, stage timeline and naps |
 | `get_heart_rate_history` | All-day heart rate: per-day resting/avg/min/max bpm, optionally `hourly` or per-`minute` (max 3 days) |
-| `get_hrv` | Nightly HRV (rMSSD by default, or SDNN): avg/min/max/last of the night's samples plus a range summary |
-| `get_readiness` | Daily readiness score, skin temperature delta from baseline and breathing quality score |
-| `get_stress` | Daily all-day stress (avg/min/max), optionally with the intraday series |
+| `get_hrv` | Nightly HRV as the Zepp app shows it (sleep HRV, baseline, score) plus the raw rMSSD/SDNN samples per upload window |
+| `get_readiness` | Daily readiness score with its components: HRV, resting HR, skin temperature, breathing, physical/mental baselines |
+| `get_stress` | Daily all-day stress (avg/min/max and % relaxed/normal/medium/high), optionally with the 5-minute series |
 | `get_lactate_threshold` | Lactate threshold estimates Zepp computes after qualifying runs |
 | `get_health_events` | Raw event streams by preset (`body_battery`, `respiratory_rate`, `spo2`, `pai`, `blood_pressure`, ...) or any `event_type`/`sub_type` |
 | `list_workouts` | List recent workout/sport sessions (runs, walks, cycling, etc) |
@@ -129,7 +129,7 @@ HRV, readiness, stress and the other event-based metrics only exist if the watch
 | --- | --- | --- |
 | `ZEPP_EMAIL`, `ZEPP_PASSWORD` | yes | Zepp account credentials (secrets) |
 | `ZEPP_TIMEZONE` | no | IANA timezone for dates, e.g. `Europe/Madrid` (the default) |
-| `MCP_AUTH_TOKEN` | no | When set, `/mcp` requires `Authorization: Bearer <token>` or a `?key=<token>` query parameter |
+| `MCP_AUTH_TOKEN` | no | When set, `/mcp` requires the token as `Authorization: Bearer <token>`, a `?key=<token>` query parameter, or in the path: `/mcp/<token>` |
 
 Set `ZEPP_TIMEZONE` under `vars` in `wrangler.jsonc`, and `MCP_AUTH_TOKEN` as a secret:
 
@@ -137,7 +137,7 @@ Set `ZEPP_TIMEZONE` under `vars` in `wrangler.jsonc`, and `MCP_AUTH_TOKEN` as a 
 npx wrangler secret put MCP_AUTH_TOKEN
 ```
 
-With a token set, clients that cannot send headers (such as a claude.ai custom connector) can use `https://<your-worker-url>/mcp?key=<token>`.
+With a token set, clients that cannot send headers (such as a claude.ai custom connector) can use `https://<your-worker-url>/mcp/<token>` or `https://<your-worker-url>/mcp?key=<token>`.
 
 ## Project structure
 
