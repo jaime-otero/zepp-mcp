@@ -331,11 +331,18 @@ export class ZeppClient {
 
   private async readinessEvents(range: DateRange): Promise<ZeppEvent[]> {
     const limit = Math.min(1000, daysInRange(range) * 3 + 10)
-    const { events } = await this.fetchEvents(EVENT_PRESETS.readiness, range, limit)
-    if (events.length > 0) return events
-    return (
-      await this.fetchEvents({ eventType: "readiness", subType: "watch_score", scope: "user" }, range, limit)
-    ).events
+    let { events } = await this.fetchEvents(EVENT_PRESETS.readiness, range, limit)
+    if (events.length === 0) {
+      ;({ events } = await this.fetchEvents(
+        { eventType: "readiness", subType: "watch_score", scope: "user" },
+        range,
+        limit
+      ))
+    }
+    // Zepp recomputes readiness during the day; keep the latest event per date.
+    const byDate = new Map<string, ZeppEvent>()
+    for (const ev of events) byDate.set(this.eventDate(ev) ?? String(ev.timestamp), ev)
+    return [...byDate.values()]
   }
 
   // Zepp marks missing readiness components with 255.
