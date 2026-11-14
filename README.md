@@ -159,6 +159,7 @@ src/
 
 ## Notes
 
-- Session tokens are cached in KV for 24 hours and refreshed automatically on a 401/403 response.
+- The connector logs in as the Zepp **web** client (like user.zepp.com), so it doesn't log your phone's Zepp app out. If Zepp refuses the web login or its token, it falls back to the Android-app login (which does sign the phone out). Set `ZEPP_LOGIN_CLIENT=android` to force the old behaviour; `zepp_status` shows which client is in use.
+- Session tokens are cached in KV for 30 days and only renewed when the API rejects them (401/403), so the connector logs in as rarely as possible.
 - Event streams (HRV, readiness, stress, ...) are read from the account's regional host taken from the login response, falling back to `api-mifit.zepp.com`. Sessions cached before this was added trigger one fresh login to pick it up.
 - `wrangler.jsonc` is committed so Cloudflare Workers Builds can deploy on push; it only holds the KV namespace ID (not usable without your Cloudflare account). `.dev.vars` is gitignored since it holds your account credentials — use `.dev.vars.example` as a template. Credentials in production are Worker secrets.

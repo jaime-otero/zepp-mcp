@@ -13,6 +13,9 @@ interface Env {
   ZEPP_PASSWORD: string
   // IANA timezone used to interpret dates (default Europe/Madrid).
   ZEPP_TIMEZONE?: string
+  // "web" (default) or "android": which Zepp client the connector logs in as.
+  // The Android login logs the phone app out; web doesn't.
+  ZEPP_LOGIN_CLIENT?: string
   // When set, /mcp requires the token (Bearer header, `?key=` or /mcp/<token>).
   MCP_AUTH_TOKEN?: string
 }
@@ -26,7 +29,8 @@ function createServer(env: Env): McpServer {
     env.ZEPP_KV,
     env.ZEPP_EMAIL,
     env.ZEPP_PASSWORD,
-    resolveTimezone(env.ZEPP_TIMEZONE, DEFAULT_TIMEZONE)
+    resolveTimezone(env.ZEPP_TIMEZONE, DEFAULT_TIMEZONE),
+    env.ZEPP_LOGIN_CLIENT === "android" ? "android" : "web"
   )
   registerTools(server, client)
   return server

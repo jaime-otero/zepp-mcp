@@ -42,6 +42,22 @@ export const LOGIN_PAYLOAD: Record<string, string> = {
   countryState: "US-NY",
 }
 
+// Same login as the Zepp web site (user.zepp.com). Web sessions don't replace
+// the phone app's session, so using the connector doesn't log the phone out.
+export const LOGIN_PAYLOAD_WEB: Record<string, string> = {
+  code: "",
+  device_id: "",
+  device_model: "web",
+  app_version: "4.0.0",
+  dn: LOGIN_PAYLOAD.dn,
+  third_name: "huami",
+  app_name: "com.huami.webapp",
+  country_code: "US",
+  grant_type: "access_token",
+  allow_registration: "false",
+  lang: "en",
+}
+
 export const HEADERS_TOKENS: Record<string, string> = {
   app_name: "com.huami.midong",
   appname: "com.huami.midong",

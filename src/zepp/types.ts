@@ -10,12 +10,18 @@ export interface ZeppLoginResult {
   regionHosts: string[]
 }
 
+// Which Zepp client the connector logs in as. "web" (like user.zepp.com) can
+// coexist with the phone app; "android" takes the phone's single app session.
+export type ZeppLoginClient = "web" | "android"
+
 export interface ZeppCachedSession {
   appToken: string
   userId: string
   loginToken: string
   // Regional api-mifit hosts from the login response; absent in older caches.
   regionHosts?: string[]
+  // Client the token was issued to; absent in caches written before it was stored.
+  client?: ZeppLoginClient
 }
 
 export interface ZeppDevice {

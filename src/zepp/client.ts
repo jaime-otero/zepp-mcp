@@ -21,6 +21,7 @@ import {
 } from "./parse"
 import type {
   ZeppCachedSession,
+  ZeppLoginClient,
   ZeppDevice,
   ZeppWorkout,
   ZeppDailyEntry,
@@ -51,39 +52,70 @@ export class ZeppClient {
   readonly timezone: string
   private sourceCache = new Map<string, string>()
   private eventHost: string | null = null
+  private loginClient: ZeppLoginClient
+  // True once this instance has made a fresh login (vs. reusing the cache).
+  private loggedInNow = false
 
-  constructor(kv: KVNamespace, email: string, password: string, timezone: string) {
+  constructor(
+    kv: KVNamespace,
+    email: string,
+    password: string,
+    timezone: string,
+    loginClient: ZeppLoginClient = "web"
+  ) {
     this.kv = kv
     this.email = email
     this.password = password
     this.timezone = timezone
+    this.loginClient = loginClient
   }
 
   async ensureSession(): Promise<ZeppCachedSession> {
     if (this.session) return this.session
 
-    // Sessions cached before regional hosts were stored need one fresh login.
+    // Sessions cached before regional hosts / the login client were stored
+    // need one fresh login.
     const cached = await getCachedSession(this.kv)
-    if (cached?.regionHosts) {
+    if (cached?.regionHosts && cached.client) {
       this.session = cached
       return cached
     }
 
-    const result = await fullLogin(this.email, this.password)
+    return this.freshLogin(this.loginClient)
+  }
+
+  // Logs in as `client`; if a web login is refused, falls back to the
+  // Android-app login so the connector keeps working.
+  private async freshLogin(client: ZeppLoginClient): Promise<ZeppCachedSession> {
+    let used = client
+    let result
+    try {
+      result = await fullLogin(this.email, this.password, client)
+    } catch (err) {
+      if (client !== "web") throw err
+      used = "android"
+      result = await fullLogin(this.email, this.password, used)
+    }
     this.session = {
       appToken: result.appToken,
       userId: result.userId,
       loginToken: result.loginToken,
       regionHosts: result.regionHosts,
+      client: used,
     }
+    this.loggedInNow = true
     await setCachedSession(this.kv, this.session)
     return this.session
   }
 
+  // If the rejected token is a web token we just obtained, logging in as web
+  // again won't help, so fall back to the Android-app login.
   private async relogin(): Promise<ZeppCachedSession> {
+    const freshWeb = this.loggedInNow && this.session?.client === "web"
     await invalidateSession(this.kv)
     this.session = null
-    return this.ensureSession()
+    const client = freshWeb ? "android" : this.loginClient
+    return this.freshLogin(client)
   }
 
   private dataHeaders(appToken: string): Record<string, string> {
@@ -210,12 +242,22 @@ export class ZeppClient {
     return out
   }
 
-  async getStatus(): Promise<{ logged_in: boolean; user_id: string | null; timezone: string }> {
+  async getStatus(): Promise<{
+    logged_in: boolean
+    user_id: string | null
+    login_client: ZeppLoginClient | null
+    timezone: string
+  }> {
     try {
       const session = await this.ensureSession()
-      return { logged_in: true, user_id: session.userId, timezone: this.timezone }
+      return {
+        logged_in: true,
+        user_id: session.userId,
+        login_client: session.client ?? null,
+        timezone: this.timezone,
+      }
     } catch {
-      return { logged_in: false, user_id: null, timezone: this.timezone }
+      return { logged_in: false, user_id: null, login_client: null, timezone: this.timezone }
     }
   }
 

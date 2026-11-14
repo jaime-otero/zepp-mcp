@@ -5,10 +5,11 @@ import {
   URLS,
   TOKENS_PAYLOAD,
   LOGIN_PAYLOAD,
+  LOGIN_PAYLOAD_WEB,
   HEADERS_TOKENS,
   HEADERS_LOGIN,
 } from "./constants"
-import type { ZeppTokenResult, ZeppLoginResult } from "./types"
+import type { ZeppTokenResult, ZeppLoginResult, ZeppLoginClient } from "./types"
 
 function buildFormBody(params: Record<string, string | string[]>): string {
   const parts: string[] = []
@@ -73,11 +74,14 @@ export async function getAccessAndRefreshTokens(
   return { accessToken, refreshToken }
 }
 
-export async function login(accessToken: string): Promise<ZeppLoginResult> {
+export async function login(
+  accessToken: string,
+  client: ZeppLoginClient = "web"
+): Promise<ZeppLoginResult> {
   const deviceId = crypto.randomUUID()
 
   const payload: Record<string, string> = {
-    ...LOGIN_PAYLOAD,
+    ...(client === "web" ? LOGIN_PAYLOAD_WEB : LOGIN_PAYLOAD),
     code: accessToken,
     device_id: deviceId,
   }
@@ -131,8 +135,9 @@ function extractRegionHosts(data: Record<string, unknown>): string[] {
 
 export async function fullLogin(
   email: string,
-  password: string
+  password: string,
+  client: ZeppLoginClient = "web"
 ): Promise<ZeppLoginResult> {
   const { accessToken } = await getAccessAndRefreshTokens(email, password)
-  return login(accessToken)
+  return login(accessToken, client)
 }
