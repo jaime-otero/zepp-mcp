@@ -13,7 +13,9 @@ export async function getCachedSession(
 export async function setCachedSession(
   kv: KVNamespace,
   session: ZeppCachedSession,
-  ttlSeconds: number = 86400
+  // Long-lived: every fresh login is a new Zepp session, so only log in again
+  // when the API rejects the token (401/403), not on a timer.
+  ttlSeconds: number = 30 * 86400
 ): Promise<void> {
   await kv.put(KV_KEY, JSON.stringify(session), {
     expirationTtl: ttlSeconds,
