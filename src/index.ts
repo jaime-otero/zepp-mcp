@@ -5,7 +5,7 @@ import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/server/valida
 import { registerTools } from "./tools"
 import { ZeppClient } from "./zepp/client"
 import { DEFAULT_TIMEZONE } from "./zepp/constants"
-import { resolveTimezone } from "./lib/time"
+import { resolveTimezone, shiftDate } from "./lib/time"
 
 interface Env {
   ZEPP_KV: KVNamespace
@@ -18,6 +18,8 @@ interface Env {
   ZEPP_LOGIN_CLIENT?: string
   // When set, /mcp requires the token (Bearer header, `?key=` or /mcp/<token>).
   MCP_AUTH_TOKEN?: string
+  // Token for GET /hrv/<token> (iOS Shortcut).
+  HRV_TOKEN?: string
 }
 
 function createServer(env: Env): McpServer {
@@ -73,6 +75,34 @@ app.all("/mcp/:key", (c) => handleMcp(c.req.raw, c.env, c.req.param("key")))
 
 app.get("/", (c) => {
   return c.json({ name: "zepp-mcp", status: "running" })
+})
+
+// Last night's HRV for the iOS Shortcut. Always answers JSON.
+app.get("/hrv/:key", async (c) => {
+  const env = c.env
+  if (!env.HRV_TOKEN || !tokensMatch(c.req.param("key"), env.HRV_TOKEN)) {
+    return c.json({ error: "unauthorized" }, 401)
+  }
+  try {
+    const timezone = resolveTimezone(env.ZEPP_TIMEZONE, DEFAULT_TIMEZONE)
+    const client = new ZeppClient(
+      env.ZEPP_KV,
+      env.ZEPP_EMAIL,
+      env.ZEPP_PASSWORD,
+      timezone,
+      env.ZEPP_LOGIN_CLIENT === "android" ? "android" : "web"
+    )
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date())
+    const result = await client.getHrv(shiftDate(today, -3), today, "rmssd", false)
+    const nights = (result.nights ?? []) as { date?: string; sleep_hrv_ms?: number }[]
+    const last = nights[nights.length - 1]
+    const date = last?.date ?? null
+    const isToday = date === today
+    return c.json({ date, hrv_ms: isToday ? (last?.sleep_hrv_ms ?? null) : null, is_today: isToday })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return c.json({ error: message, hrv_ms: null }, 502)
+  }
 })
 
 export default app
